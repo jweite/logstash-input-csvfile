@@ -3,8 +3,24 @@ require "logstash/inputs/file"
 require "logstash/namespace"
 require "csv"
 
+# Subclass of logstash-input-file that parses CSV lines.
+#
+# Unlike logstash-filter-csv, this version can respect a first-line schema in the csv,
+# in which the first line of the CSV file defines the column names for the remainder.
+# Set plugin config first_line_defines_columns to true to enable this behavior.
+#
+# (Alternatively one can statically define a list of columns in the columns config
+# as logstash-filter-csv does).  
+#
+# Since multiple files may be being read by the same plugin instance, and each can have
+# a distinct schema, this plugin records the schema for each file (as defined by the
+# event's path attribute) in a hash.  When it receives an event for a file it doesn't
+# know it reads/parses that file's first line to obtain the schema.
+
+# I considered extending logstash-filter-csv for this, but 
+
 class LogStash::Inputs::CSVFile < LogStash::Inputs::File
-	config_name "csvfile"
+  config_name "csvfile"
 
   # Define a list of column names (in the order they appear in the CSV,
   # as if it were a header line). If `columns` is not configured, or there
@@ -34,20 +50,21 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
 
   public
   def register
-    @fileColumns = Hash.new			# Hash to hold the col schema of each known file
+    @fileColumns = Hash.new     # Hash to hold the col schema of each known file
     super()
   end
   
   def decorate(event)
     super(event)
-	
-	messageTag = "message"
-	pathTag = "path"
-
-    if event[messageTag]	
+  
+    message = event["message"]
+    path = event["path"]
     
+    @logger.debug? && @logger.debug("handling csv in first_line_defines_schema mode", :path => path, :message => message)
+    
+    if message
       begin
-        values = CSV.parse_line(event[messageTag], :col_sep => @separator, :quote_char => @quote_char)
+        values = CSV.parse_line(message, :col_sep => @separator, :quote_char => @quote_char)
 
         if @target.nil?
           # Default is to write to the root of the event.
@@ -56,37 +73,53 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
           dest = event[@target] ||= {}
         end
 
-		# Get attribute names for the columns.
-		cols = []
-		if @first_line_defines_columns
-			# See whether we've seen event from this file before
-			if !@fileColumns.has_key?(event[pathTag])
-				#Event's path is unknown in schema hash.  This must be first event for this file, defining its columns.  Remember them.
-				@fileColumns[event[pathTag]] = values
-				event["_csvmetadata"] = true 				# Flag enables subsequent filtering of csv metadata line
-			else				
-				#We know this file's columns.  Use them.
-				cols = @fileColumns[event[pathTag]]
-			end
-		else
-			# Use explicitly defined columns
-			cols = @columns 
-		end
+        # Get attribute names for the columns.
+        cols = []
+        if @first_line_defines_columns
+          if !path
+            @logger.warn("No path in event.  Cannot use first_line_defines_columns mode on this event.")
+            cols = []   #Parse with default col names
+          else
+            @logger.debug? && @logger.debug("handling csv in first_line_defines_schema mode", :path => path, :message => message)
+            if !@fileColumns.has_key?(path)   
+              @logger.debug? && @logger.debug("Unknown file/schema.  Reading schema from file.", :path => path)
+              firstLine = ""
+              File.open(path, "r") do |f|
+                firstLine = f.gets
+              end
+              @fileColumns[path] = CSV.parse_line(firstLine, :col_sep => @separator, :quote_char => @quote_char)
+              @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => @fileColumns[path])
+              
+              if @fileColumns[path].join == values.join
+                @logger.debug? && @logger.debug("Received the schema row event.  Tagging w/ _csvmetadata", :message => message)
+                cols = []
+                event["_csvmetadata"] = true        # Flag enables subsequent filtering of csv metadata line
+              else
+                cols = @fileColumns[path]
+              end
+            else        
+              #We know this file's columns.  Use them.
+              @logger.debug? && @logger.debug("Known file. Using cached schema", :cols => @fileColumns[path])
+              cols = @fileColumns[path]
+            end
+          end
+        else
+          @logger.debug? && @logger.debug("handling csv in explicitly defined columns mode", :message => message, :columns => @columns)
+          cols = @columns 
+        end
 
-		# Don't add column attributes if this is the metadata event.
+        # Don't add column attributes if this is the metadata event.
         if !event["_csvmetadata"]
-			values.each_index do |i|
-				field_name = cols[i] || "column#{i+1}"
-				dest[field_name] = values[i]
-			end
-		end
-		
+          values.each_index do |i|
+          field_name = cols[i] || "column#{i+1}"
+          dest[field_name] = values[i]
+        end
+      end
       rescue => e
         event.tag "_csvparsefailure"
-        @logger.warn("Trouble parsing csv", messageTag => event[messageTag], 
-                      :exception => e)
+        @logger.warn("Trouble parsing csv", :message => message, :exception => e)
         return
       end # begin
-    end # if event[messageTag]
+    end # if message
   end # decorate()
 end # class LogStash::Inputs::CSVFile
