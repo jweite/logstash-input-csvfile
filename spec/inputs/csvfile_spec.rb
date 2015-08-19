@@ -80,7 +80,7 @@ describe "inputs/csvfile" do
 
     File.open(tmpfile_path, "a") do |fd|
       fd.puts("first,second,third")
-      fd.puts("fourth,fifth")
+      fd.puts('"fou,rth","fifth"')              #Implicit quoting check
       fd.puts("sixth,seventh,eighth,ninth")
     end
 
@@ -91,7 +91,7 @@ describe "inputs/csvfile" do
     insist { events[0]["column1"] } == "first"
     insist { events[0]["column2"] } == "second"
     insist { events[0]["column3"] } == "third"
-    insist { events[1]["column1"] } == "fourth"
+    insist { events[1]["column1"] } == "fou,rth"  #Not a typo.
     insist { events[1]["column2"] } == "fifth"
     insist { events[2]["column1"] } == "sixth"
     insist { events[2]["column2"] } == "seventh"
@@ -100,7 +100,7 @@ describe "inputs/csvfile" do
 
   end
 
-    it "should parse csv columns into attributes using explicitly defined column names, default-naming any excess columns" do
+    it "should parse csv columns into attributes using explicitly defined column names, default-naming any excess columns; non-default csv separator" do
     tmpfile_path = Stud::Temporary.pathname
     sincedb_path = Stud::Temporary.pathname
 
@@ -111,15 +111,16 @@ describe "inputs/csvfile" do
           start_position => "beginning"
           sincedb_path => "#{sincedb_path}"
           delimiter => "#{delimiter}"
+          separator => ";"
           columns => ["FIRST_COL","SECOND_COL","THIRD_COL"]
         }
       }
     CONFIG
 
     File.open(tmpfile_path, "a") do |fd|
-      fd.puts("first,second,third")
-      fd.puts("fourth,fifth")
-      fd.puts("sixth,seventh,eighth,ninth")
+      fd.puts("first;second;third")
+      fd.puts("fourth;fifth")
+      fd.puts("sixth;sev,enth;eighth;ninth")
     end
 
     events = input(conf) do |pipeline, queue|
@@ -132,7 +133,7 @@ describe "inputs/csvfile" do
     insist { events[1]["FIRST_COL"] } == "fourth"
     insist { events[1]["SECOND_COL"] } == "fifth"
     insist { events[2]["FIRST_COL"] } == "sixth"
-    insist { events[2]["SECOND_COL"] } == "seventh"
+    insist { events[2]["SECOND_COL"] } == "sev,enth"
     insist { events[2]["THIRD_COL"] } == "eighth"
     insist { events[2]["column4"] } == "ninth"
 
@@ -140,12 +141,14 @@ describe "inputs/csvfile" do
 
   it "should parse csv columns into attributes using column names defined on the csv files 0th row with each csv file defining its own independent schema; it should tag schema row events as _csvmetadata" do
     tmpfile_path = Stud::Temporary.pathname
+    tmpfile2_path = Stud::Temporary.pathname
     sincedb_path = Stud::Temporary.pathname
 
     conf = <<-CONFIG
       input {
         csvfile {
           path => "#{tmpfile_path}"
+          path => "#{tmpfile2_path}"
           start_position => "beginning"
           sincedb_path => "#{sincedb_path}"
           delimiter => "#{delimiter}"
@@ -176,7 +179,7 @@ describe "inputs/csvfile" do
     insist { events[3]["C_COLUMN"] } == "eighth"
     insist { events[3]["column4"] } == "ninth"
 
-    File.open(tmpfile_path, "b") do |fd|
+    File.open(tmpfile2_path, "a") do |fd|
       fd.puts("D_COLUMN,E_COLUMN,F_COLUMN")
       fd.puts("first,second,third")
       fd.puts("fourth,fifth")
