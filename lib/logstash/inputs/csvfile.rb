@@ -58,10 +58,26 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
   # Defaults to writing to the root of the event.
   config :target, :validate => :string
 
+  # The maximum time a csv file's schema can be unused (in hours) before 
+  # it is automatically scrubbed to avoid memory leakage.  
+  # If an event for that file arrives subsequently the schema will be 
+  # reconstituted (albeit with the penalty of schema row re-read from file).
+  #
+  # Cache scrubbing occurs inline only when new new files are detected to minimize
+  # perf impact on most CSV events.  Since new file detection time is the only time 
+  # the cache actually grows, and we're expecting to pay the schema-read penalty then 
+  # anyway, it's an optimal time to scrub.
+  #
+  # 0 disables, but memory will grow.  OK if you're routinely restarting logstash.
+  config :max_cached_schema_age_hours, :validate => :number, :default => 24
+  
   public
   def register
-    @fileColumns = Hash.new     
+    @fileColumns = Hash.new
+    @schemaTouchedTimes = Hash.new
     super()
+    
+    @logger.warn("schema cache scrubbing disabled.  Memory use will grow over time.") if @max_cached_schema_age_hours <= 0
   end
   
   def decorate(event)
@@ -83,7 +99,7 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
           dest = event[@target] ||= {}
         end
 
-        # Get attribute names for the columns.
+        # Get names for the columns.
         cols = []
         if @first_line_defines_columns
           if !path
@@ -91,13 +107,16 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
             cols = []   #Parse with default col names
           else
             @logger.debug? && @logger.debug("handling csv in first_line_defines_schema mode", :path => path, :message => message)
+            
             if !@fileColumns.has_key?(path)   
-              @logger.debug? && @logger.debug("Unknown file/schema.  Reading schema from file.", :path => path)
-              firstLine = ""
-              File.open(path, "r") do |f|
-                firstLine = f.gets
-              end
-              @fileColumns[path] = CSV.parse_line(firstLine, :col_sep => @separator, :quote_char => @quote_char)
+              @logger.debug? && @logger.debug("Event from unknown file/schema.  Reading schema from that file.", :path => path)
+
+              scrubSchemaCache if @max_cached_schema_age_hours > 0
+
+              csvFileFirstLine = ""
+              File.open(path, "r") {|f| csvFileFirstLine = f.gets }
+              @fileColumns[path] = CSV.parse_line(csvFileFirstLine, :col_sep => @separator, :quote_char => @quote_char)
+              @schemaTouchedTimes[path] = Time.now
               @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => @fileColumns[path])
               
               if @fileColumns[path].join == values.join
@@ -107,10 +126,12 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
               else
                 cols = @fileColumns[path]
               end
+              
             else        
               #We know this file's columns.  Use them.
               @logger.debug? && @logger.debug("Known file. Using cached schema", :cols => @fileColumns[path])
               cols = @fileColumns[path]
+              @schemaTouchedTimes[path] = Time.now
             end
           end
         else
@@ -131,4 +152,26 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
       end # begin
     end # if message
   end # decorate()
+  
+  def scrubSchemaCache
+    @logger.warn("Scrubbing schema cache", :size => @schemaTouchedTimes.length)
+    
+    expiringFiles = []
+    now = Time.now
+    @schemaTouchedTimes.each do |filename, lastReadTime|
+      if (lastReadTime + (@max_cached_schema_age_hours * 60 * 60)) < now
+        expiringFiles << filename 
+        @logger.warn("Expiring schema for: ", :file => filename, :lastRead => lastReadTime)
+      end
+    end
+    
+    expiringFiles.each do |filename|
+      @fileColumns.delete(filename)
+      @schemaTouchedTimes.delete(filename)
+      @logger.warn("Deleted schema for: ", :file => filename)
+    end
+    @logger.warn("Done scrubbing schema cache", :size => @schemaTouchedTimes.length)
+    
+  end
+  
 end # class LogStash::Inputs::CSVFile
