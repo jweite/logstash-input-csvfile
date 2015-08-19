@@ -3,21 +3,31 @@ require "logstash/inputs/file"
 require "logstash/namespace"
 require "csv"
 
-# Subclass of logstash-input-file that parses CSV lines.
-#
-# Unlike logstash-filter-csv, this version can respect a first-line schema in the csv,
-# in which the first line of the CSV file defines the column names for the remainder.
-# Set plugin config first_line_defines_columns to true to enable this behavior.
-#
-# (Alternatively one can statically define a list of columns in the columns config
-# as logstash-filter-csv does).  
+# Subclass of logstash-input-file that parses CSV lines, with support for first-line schemas.
+# Set first_line_defines_columns => true to enable this behavior.
+# Statically defined columns are also supported, a la logstash-filter-csv, via the columns param.
+# first_line_defines_columns => true takes precedence, though.
 #
 # Since multiple files may be being read by the same plugin instance, and each can have
-# a distinct schema, this plugin records the schema for each file (as defined by the
+# a distinct schema, this plugin records a schema per source file (as defined by the
 # event's path attribute) in a hash.  When it receives an event for a file it doesn't
-# know it reads/parses that file's first line to obtain the schema.
-
-# I considered extending logstash-filter-csv for this, but 
+# know it reads/parses that file's first line to obtain the schema.  This method supports 
+# resuming processing after logstash restarts in mid-file.
+#
+# I considered extending logstash-filter-csv for to do this, but felt that the only reliable
+# way to support streaming csv read was to explicitly read it from the file's schema row 
+# (and cache it so subsequent row performance for that file is good.)  Since we cannot count 
+# on a logstash filter having read-access to the file, or even processing events that originate
+# from files I rejected this approach.  By definition, a file input plugin must have read-access
+# to the file it's sourcing data from.
+#
+# This plugin borrows most of its csv parsing logic from logstash-filter-csv.  
+#
+# This plugin extends logstash-input-file by overriding its decorate method.  Note that
+# logstash-input-plugin 0.0.10, released with Logstash 1.5, doesn't set the event's 
+# path element before calling decorate (which this plugin requires), so gemspec insists
+# on logstash-input-file 1.1.0  
+#
 
 class LogStash::Inputs::CSVFile < LogStash::Inputs::File
   config_name "csvfile"
@@ -50,7 +60,7 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
 
   public
   def register
-    @fileColumns = Hash.new     # Hash to hold the col schema of each known file
+    @fileColumns = Hash.new     
     super()
   end
   
@@ -108,8 +118,7 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
           cols = @columns 
         end
 
-        # Don't add column attributes if this is the metadata event.
-        if !event["_csvmetadata"]
+        if !event["_csvmetadata"]     # Don't add column attributes if this is the metadata event.
           values.each_index do |i|
           field_name = cols[i] || "column#{i+1}"
           dest[field_name] = values[i]
