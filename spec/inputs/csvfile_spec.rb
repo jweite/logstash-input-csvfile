@@ -57,13 +57,13 @@ describe "inputs/csvfile" do
       end
 
       events
-    end
+    end #input block
 
     insist { events[0]["message"] } == "hello"
     insist { events[1]["message"] } == "world"
-  end
+  end #it
   
-  it "should parse csv columns into attributes using default column names" do
+  it "should parse csv columns into event attributes using default column names" do
     tmpfile_path = Stud::Temporary.pathname
     sincedb_path = Stud::Temporary.pathname
 
@@ -80,7 +80,7 @@ describe "inputs/csvfile" do
 
     File.open(tmpfile_path, "a") do |fd|
       fd.puts("first,second,third")
-      fd.puts('"fou,rth","fifth"')              #Implicit quoting check
+      fd.puts('"fou,rth","fifth"')              #Quoting check
       fd.puts("sixth,seventh,eighth,ninth")
     end
 
@@ -91,16 +91,16 @@ describe "inputs/csvfile" do
     insist { events[0]["column1"] } == "first"
     insist { events[0]["column2"] } == "second"
     insist { events[0]["column3"] } == "third"
-    insist { events[1]["column1"] } == "fou,rth"  #Not a typo.
+    insist { events[1]["column1"] } == "fou,rth"  #Not a typo: quoting check
     insist { events[1]["column2"] } == "fifth"
     insist { events[2]["column1"] } == "sixth"
     insist { events[2]["column2"] } == "seventh"
     insist { events[2]["column3"] } == "eighth"
     insist { events[2]["column4"] } == "ninth"
 
-  end
+  end #it
 
-    it "should parse csv columns into attributes using explicitly defined column names, default-naming any excess columns; non-default csv separator" do
+  it "should parse csv columns into attributes using explicitly defined column names, default-naming any excess columns; non-default csv separator" do
     tmpfile_path = Stud::Temporary.pathname
     sincedb_path = Stud::Temporary.pathname
 
@@ -137,7 +137,7 @@ describe "inputs/csvfile" do
     insist { events[2]["THIRD_COL"] } == "eighth"
     insist { events[2]["column4"] } == "ninth"
 
-  end
+  end #it
 
   it "should parse csv columns into attributes using column names defined on the csv files 0th row with each csv file defining its own independent schema; it should tag schema row events as _csvmetadata" do
     tmpfile_path = Stud::Temporary.pathname
@@ -201,6 +201,279 @@ describe "inputs/csvfile" do
     insist { events[3]["F_COLUMN"] } == "eighth"
     insist { events[3]["column4"] } == "ninth"
 
-  end
+  end #it
 
+  it "should parse csv columns into attributes using explicitly defined column names, default-naming any excess columns; non-default csv separator" do
+    tmpfile_path = Stud::Temporary.pathname
+    sincedb_path = Stud::Temporary.pathname
+
+    conf = <<-CONFIG
+      input {
+        csvfile {
+          path => "#{tmpfile_path}"
+          start_position => "beginning"
+          sincedb_path => "#{sincedb_path}"
+          delimiter => "#{delimiter}"
+          separator => ";"
+          columns => ["FIRST_COL","SECOND_COL","THIRD_COL"]
+        }
+      }
+    CONFIG
+
+    File.open(tmpfile_path, "a") do |fd|
+      fd.puts("first;second;third")
+      fd.puts("fourth;fifth")
+      fd.puts("sixth;sev,enth;eighth;ninth")
+    end
+
+    events = input(conf) do |pipeline, queue|
+      3.times.collect { queue.pop }
+    end
+
+    insist { events[0]["FIRST_COL"] } == "first"
+    insist { events[0]["SECOND_COL"] } == "second"
+    insist { events[0]["THIRD_COL"] } == "third"
+    insist { events[1]["FIRST_COL"] } == "fourth"
+    insist { events[1]["SECOND_COL"] } == "fifth"
+    insist { events[2]["FIRST_COL"] } == "sixth"
+    insist { events[2]["SECOND_COL"] } == "sev,enth"
+    insist { events[2]["THIRD_COL"] } == "eighth"
+    insist { events[2]["column4"] } == "ninth"
+
+  end #it
+
+  it "should cache schemas per file" do
+    tmpfile_path = Stud::Temporary.pathname
+    tmpfile2_path = Stud::Temporary.pathname
+    sincedb_path = Stud::Temporary.pathname
+
+    conf = <<-CONFIG
+      input {
+        csvfile {
+          path => "#{tmpfile_path}"
+          path => "#{tmpfile2_path}"
+          start_position => "beginning"
+          sincedb_path => "#{sincedb_path}"
+          delimiter => "#{delimiter}"
+       	  first_line_defines_columns => true
+          add_schema_cache_telemetry_to_event => true
+        }
+      }
+    CONFIG
+
+   
+    events = input(conf) do |pipeline, queue|
+      File.open(tmpfile_path, "a") do |fd|
+        fd.puts("A_COLUMN,B_COLUMN,C_COLUMN")
+        fd.puts("first,second,third")
+      end
+
+      sleep 1
+      
+      File.open(tmpfile2_path, "a") do |fd|
+        fd.puts("D_COLUMN,E_COLUMN,F_COLUMN")
+        fd.puts("1st,2nd,3rd")
+      end
+
+      4.times.collect { queue.pop }
+    end
+
+    insist { events[0]["_csvmetadata"] } == true
+    insist { events[0]["_schemacachetelemetry"] } == "newEntryCreated"
+    
+    insist { events[1]["A_COLUMN"] } == "first"
+    insist { events[1]["B_COLUMN"] } == "second"
+    insist { events[1]["C_COLUMN"] } == "third"
+    insist { events[1]["_schemacachetelemetry"] } == "cachedEntryUsed"
+    
+    insist { events[2]["_csvmetadata"] } == true
+    insist { events[2]["_schemacachetelemetry"] } == "newEntryCreated"
+    
+    insist { events[3]["D_COLUMN"] } == "1st"
+    insist { events[3]["E_COLUMN"] } == "2nd"
+    insist { events[3]["F_COLUMN"] } == "3rd"
+    insist { events[3]["_schemacachetelemetry"] } == "cachedEntryUsed"
+
+  end #it
+
+  it "should resume processing of a csv file after logstash restarts" do
+    tmpfile_path = Stud::Temporary.pathname
+    sincedb_path = Stud::Temporary.pathname
+
+    # Set up to expire cache entries after 10s of being untouched.  Request that telemetry be added to the event to make cache usage visible.
+    conf = <<-CONFIG
+      input {
+        csvfile {
+          path => "#{tmpfile_path}"
+          start_position => "beginning"
+          sincedb_path => "#{sincedb_path}"
+          delimiter => "#{delimiter}"
+       	  first_line_defines_columns => true
+          add_schema_cache_telemetry_to_event => true
+        }
+      }
+    CONFIG
+
+   
+    File.open(tmpfile_path, "a") do |fd|
+      fd.puts("A_COLUMN,B_COLUMN,C_COLUMN")
+      fd.puts("first,second,third")
+    end
+
+    events = input(conf) do |pipeline, queue|
+      2.times.collect { queue.pop }
+    end
+
+    insist { events[0]["_csvmetadata"] } == true
+    insist { events[0]["_schemacachetelemetry"] } == "newEntryCreated"
+    
+    insist { events[1]["A_COLUMN"] } == "first"
+    insist { events[1]["B_COLUMN"] } == "second"
+    insist { events[1]["C_COLUMN"] } == "third"
+    insist { events[1]["_schemacachetelemetry"] } == "cachedEntryUsed"
+    
+    File.open(tmpfile_path, "a") do |fd|
+      fd.puts("fourth,fifth,sixth")
+    end
+
+    events = input(conf) do |pipeline, queue|
+      1.times.collect { queue.pop }
+    end
+
+    insist { events[0]["A_COLUMN"] } == "fourth"
+    insist { events[0]["B_COLUMN"] } == "fifth"
+    insist { events[0]["C_COLUMN"] } == "sixth"
+    insist { events[0]["_schemacachetelemetry"] } == "newEntryCreated"
+
+  end #it
+
+  it "should expire schema cache entries if untouched for more than their configured lifetime (10s in this case)" do
+    
+    # This was tricky to write.  Key points:
+    # - Utilizes a special white-box mode of the plugin that exposes what its doing with its schema cache in telemetry attributes.
+    # - While cache durations are typically in multiple hours, for testing we dial it back to 10s via a small fractional number.
+    # - All the various file IO has to go into the input block
+    # - The queue reads are sprinkled throughout to synchronize the test proc with logstash's file processing.
+    # - Put the insists right after the queue reads to better tie the inputs with the expected outputs.
+  
+    puts "\nThe caching test now running will take a while... (~30s)"
+    
+    tmpfile_path = Stud::Temporary.pathname
+    tmpfile2_path = Stud::Temporary.pathname
+    tmpfile3_path = Stud::Temporary.pathname
+    sincedb_path = Stud::Temporary.pathname
+
+    conf = <<-CONFIG
+      input {
+        csvfile {
+          path => "#{tmpfile_path}"
+          path => "#{tmpfile2_path}"
+          path => "#{tmpfile3_path}"
+          start_position => "beginning"
+          sincedb_path => "#{sincedb_path}"
+          delimiter => "#{delimiter}"
+       	  first_line_defines_columns => true
+          max_cached_schema_age_hours => 0.0027777777777778
+          add_schema_cache_telemetry_to_event => true
+          discover_interval => 1
+        }
+      }
+    CONFIG
+   
+    events = input(conf) do |pipeline, queue|
+    
+      # File1 Initial Entries.  File 1's schema will be cached.
+      File.open(tmpfile_path, "a") do |fd|
+        fd.puts("A_COLUMN,B_COLUMN,C_COLUMN")
+        fd.puts("first,second,third")
+      end
+      # Verify File1 schema was cached and schema row was tagged as csvmetadata
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
+      insist { event["_csvmetadata"] } == true
+
+      # Verify that cached File1 schema was used to decode row2 of File1
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
+      insist { event["A_COLUMN"] } == "first"
+      insist { event["B_COLUMN"] } == "second"
+      insist { event["C_COLUMN"] } == "third"
+
+      # File2 Initial Entries
+      File.open(tmpfile2_path, "a") do |fd|
+        fd.puts("D_COLUMN,E_COLUMN,F_COLUMN")
+        fd.puts("1st,2nd,3rd")
+      end
+      # Verify File2 schema was cached and schema row was tagged as csvmetadata
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
+      insist { event["_csvmetadata"] } == true
+      
+      # Verify that cached File2 schema was used to decode row2 of File2
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
+      insist { event["D_COLUMN"] } == "1st"
+      insist { event["E_COLUMN"] } == "2nd"
+      insist { event["F_COLUMN"] } == "3rd"
+
+      # Touch File1 before its cached schema entries expires (<10s), refreshing the entry.
+      sleep 5
+      File.open(tmpfile_path, "a") do |fd|
+        fd.puts("fourth,fifth,sixth")
+      end
+      # Verify that still-cached File1 schema was used to decode newly added row of File1
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
+      insist { event["A_COLUMN"] } == "fourth"
+      insist { event["B_COLUMN"] } == "fifth"
+      insist { event["C_COLUMN"] } == "sixth"
+
+      # Touch File1 again after File2's cache entry expires.  
+      sleep 10
+      File.open(tmpfile_path, "a") do |fd|
+        fd.puts("seventh,eighth,ninth")
+      end
+      # Verify that File1's entry hasn't expired, by virtue of the previous touch refreshing it.
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
+      insist { event["A_COLUMN"] } == "seventh"
+      insist { event["B_COLUMN"] } == "eighth"
+      insist { event["C_COLUMN"] } == "ninth"
+
+      # Touch File3. Creation of its cache entry forces purge of File2's expired entry, which is made visible via telemetry.
+      sleep 1
+      File.open(tmpfile3_path, "a") do |fd|
+        fd.puts("X_COLUMN,Y_COLUMN,Z_COLUMN")
+        fd.puts("erste,zweite,dritte")
+      end
+      # Verify that scrubbing of expired cache entries takes place, reducing cached count from 2 (File1 & File2) to 1 (Just File1).
+      #  (Scrubbing takes place before creation of File3's schema entry in the cache.)
+      event = queue.pop
+      insist { event["_csvmetadata"] } == true
+      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
+      insist { event["_schemacachetelemetryscrubbedbeforecount"] } == 2
+      insist { event["_schemacachetelemetryscrubbedaftercount"] } == 1
+
+      # Verify that File3's schema did in fact get cached.
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
+      insist { event["X_COLUMN"] } == "erste"
+      insist { event["Y_COLUMN"] } == "zweite"
+      insist { event["Z_COLUMN"] } == "dritte"
+      
+      # File2 post-expiration entry.  Should re-create the File2 cache entry.
+      sleep 1
+      File.open(tmpfile2_path, "a") do |fd|
+        fd.puts("4th,5th,6th")
+      end
+      # Verify that File2's schema gets recreated (but not transmitted as an event since this isn't the natural row0 read).
+      event = queue.pop
+      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
+      insist { event["D_COLUMN"] } == "4th"
+      insist { event["E_COLUMN"] } == "5th"
+      insist { event["F_COLUMN"] } == "6th"
+
+    end #input block
+  end #it
+  
 end

@@ -70,6 +70,9 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
   #
   # 0 disables, but memory will grow.  OK if you're routinely restarting logstash.
   config :max_cached_schema_age_hours, :validate => :number, :default => 24
+
+  # To support testing.  Adds attributes to events regarding schema cache behavior.
+  config :add_schema_cache_telemetry_to_event, :validate => :boolean, :default => false
   
   public
   def register
@@ -111,14 +114,19 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
             if !@fileColumns.has_key?(path)   
               @logger.debug? && @logger.debug("Event from unknown file/schema.  Reading schema from that file.", :path => path)
 
-              scrubSchemaCache if @max_cached_schema_age_hours > 0
+              scrubSchemaCache(event) if @max_cached_schema_age_hours > 0
 
               csvFileFirstLine = ""
               File.open(path, "r") {|f| csvFileFirstLine = f.gets }
               @fileColumns[path] = CSV.parse_line(csvFileFirstLine, :col_sep => @separator, :quote_char => @quote_char)
               @schemaTouchedTimes[path] = Time.now
-              @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => @fileColumns[path])
               
+              @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => @fileColumns[path])
+              if @add_schema_cache_telemetry_to_event 
+                event["_schemacachetelemetry"]="newEntryCreated"
+                event["_cache_touch_time"]=Time.now
+              end
+               
               if @fileColumns[path].join == values.join
                 @logger.debug? && @logger.debug("Received the schema row event.  Tagging w/ _csvmetadata", :message => message)
                 cols = []
@@ -130,6 +138,7 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
             else        
               #We know this file's columns.  Use them.
               @logger.debug? && @logger.debug("Known file. Using cached schema", :cols => @fileColumns[path])
+              event["_schemacachetelemetry"]="cachedEntryUsed" if @add_schema_cache_telemetry_to_event  
               cols = @fileColumns[path]
               @schemaTouchedTimes[path] = Time.now
             end
@@ -153,24 +162,27 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
     end # if message
   end # decorate()
   
-  def scrubSchemaCache
-    @logger.warn("Scrubbing schema cache", :size => @schemaTouchedTimes.length)
+  def scrubSchemaCache(event)
+    @logger.debug? && @logger.debug("Scrubbing schema cache", :size => @fileColumns.length)
+    event["_schemacachetelemetryscrubbedbeforecount"]=@fileColumns.length if @add_schema_cache_telemetry_to_event 
     
     expiringFiles = []
     now = Time.now
     @schemaTouchedTimes.each do |filename, lastReadTime|
       if (lastReadTime + (@max_cached_schema_age_hours * 60 * 60)) < now
         expiringFiles << filename 
-        @logger.warn("Expiring schema for: ", :file => filename, :lastRead => lastReadTime)
+        @logger.debug? && @logger.debug("Expiring schema for: ", :file => filename, :lastRead => lastReadTime)
       end
     end
     
     expiringFiles.each do |filename|
       @fileColumns.delete(filename)
       @schemaTouchedTimes.delete(filename)
-      @logger.warn("Deleted schema for: ", :file => filename)
+      @logger.debug? && @logger.debug("Deleted schema for: ", :file => filename)
     end
-    @logger.warn("Done scrubbing schema cache", :size => @schemaTouchedTimes.length)
+
+    event["_schemacachetelemetryscrubbedaftercount"]=@fileColumns.length if @add_schema_cache_telemetry_to_event 
+    @logger.debug? && @logger.debug("Done scrubbing schema cache", :size => @fileColumns.length)
     
   end
   
