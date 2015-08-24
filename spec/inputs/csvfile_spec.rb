@@ -203,6 +203,48 @@ describe "inputs/csvfile" do
 
   end #it
 
+  it "should parse csv columns into attributes using column names defined on the first file row that matches the schema_pattern_to_match with each csv file defining its own independent schema; it should tag schema row events as _csvmetadata" do
+    tmpfile_path = Stud::Temporary.pathname
+    sincedb_path = Stud::Temporary.pathname
+
+    conf = <<-CONFIG
+      input {
+        csvfile {
+          path => "#{tmpfile_path}"
+          start_position => "beginning"
+          sincedb_path => "#{sincedb_path}"
+          delimiter => "#{delimiter}"
+       	  first_line_defines_columns => true
+          schema_pattern_to_match => "^.+$"
+        }
+      }
+    CONFIG
+
+    File.open(tmpfile_path, "a") do |fd|
+      fd.puts("")
+      fd.puts("A_COLUMN,B_COLUMN,C_COLUMN")
+      fd.puts("first,second,third")
+      fd.puts("fourth,fifth")
+      fd.puts("sixth,seventh,eighth,ninth")
+    end
+
+    events = input(conf) do |pipeline, queue|
+      5.times.collect { queue.pop }
+    end
+
+    insist { events[1]["_csvmetadata"] } == true
+    insist { events[2]["A_COLUMN"] } == "first"
+    insist { events[2]["B_COLUMN"] } == "second"
+    insist { events[2]["C_COLUMN"] } == "third"
+    insist { events[3]["A_COLUMN"] } == "fourth"
+    insist { events[3]["B_COLUMN"] } == "fifth"
+    insist { events[4]["A_COLUMN"] } == "sixth"
+    insist { events[4]["B_COLUMN"] } == "seventh"
+    insist { events[4]["C_COLUMN"] } == "eighth"
+    insist { events[4]["column4"] } == "ninth"
+
+  end #it
+
   it "should parse csv columns into attributes using explicitly defined column names, default-naming any excess columns; non-default csv separator" do
     tmpfile_path = Stud::Temporary.pathname
     sincedb_path = Stud::Temporary.pathname

@@ -70,6 +70,14 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
   #
   # 0 disables, but memory will grow.  OK if you're routinely restarting logstash.
   config :max_cached_schema_age_hours, :validate => :number, :default => 24
+  
+  # To handle cases where there's other content in the file before the schema row
+  # that you'll want to ignore. For instance, you can skip leading blank lines 
+  # before the schema by matching to non-blank lines using "^.+$"
+  # Note that the plugin will still emit events for pre-schema rows, albeit with
+  # no attributes (for blank lines) or default-named attributes (if the pre-schema
+  # lines do parse as valid CSV).
+  config :schema_pattern_to_match, :validate => :string
 
   # To support testing.  Adds attributes to events regarding schema cache behavior.
   config :add_schema_cache_telemetry_to_event, :validate => :boolean, :default => false
@@ -94,6 +102,7 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
     if message
       begin
         values = CSV.parse_line(message, :col_sep => @separator, :quote_char => @quote_char)
+        return if values.length == 0 
 
         if @target.nil?
           # Default is to write to the root of the event.
@@ -116,9 +125,19 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
 
               scrubSchemaCache(event) if @max_cached_schema_age_hours > 0
 
-              csvFileFirstLine = ""
-              File.open(path, "r") {|f| csvFileFirstLine = f.gets }
-              @fileColumns[path] = CSV.parse_line(csvFileFirstLine, :col_sep => @separator, :quote_char => @quote_char)
+              csvFileLine = ""
+              File.open(path, "r") do |f| 
+                while csvFileLine.length == 0 and csvFileLine = f.gets 
+                  if @schema_pattern_to_match
+                    if !csvFileLine.end_with?("\n") or !csvFileLine.match(@schema_pattern_to_match) 
+                      csvFileLine = ""
+                    end
+                  end
+                end
+              end
+              return if csvFileLine.length == 0
+              
+              @fileColumns[path] = CSV.parse_line(csvFileLine, :col_sep => @separator, :quote_char => @quote_char)
               @schemaTouchedTimes[path] = Time.now
               
               @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => @fileColumns[path])
