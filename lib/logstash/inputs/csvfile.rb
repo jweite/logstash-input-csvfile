@@ -95,91 +95,117 @@ class LogStash::Inputs::CSVFile < LogStash::Inputs::File
     super(event)
   
     message = event["message"]
+    return if !message
+    
+    begin
+      values = CSV.parse_line(message, :col_sep => @separator, :quote_char => @quote_char)
+      return if values.length == 0 
+
+      # Get names for the columns.
+      if @first_line_defines_columns
+        @logger.debug? && @logger.debug("handling csv in first_line_defines_columns mode", :message => message, :columns => @columns)
+        cols = getSchemaForFile(event, values)
+      else
+        @logger.debug? && @logger.debug("handling csv in explicitly defined columns mode", :message => message, :columns => @columns)
+        cols = @columns 
+      end
+
+      # Determine where to write the new attributes
+      if @target.nil?
+        # Default is to write to the root of the event.
+        dest = event
+      else
+        dest = event[@target] ||= {}
+      end
+
+      # Add the per-column attributes (as long as this isn't the event from the schema defining row)
+      if !event["_csvmetadata"] 
+        values.each_index do |i|
+        field_name = cols[i] || "column#{i+1}"
+        dest[field_name] = values[i]
+      end
+    end
+
+    rescue => e
+      event.tag "_csvparsefailure"
+      @logger.warn("Trouble parsing csv", :message => message, :exception => e)
+      return
+    end # begin
+  end # decorate()
+
+  def getSchemaForFile(event, parsedValues)
     path = event["path"]
+    if !path
+      @logger.warn("No path in event.  Cannot retrieve a schema for this event.")
+      return []
+    end
+
+    @logger.debug? && @logger.debug("Getting schema for file", :path => path)
+
+    schema = getCachedSchemaForFile(path)
+    if schema   
+      @logger.debug? && @logger.debug("Using cached schema", :cols => schema)
+      event["_schemacachetelemetry"]="cachedEntryUsed" if @add_schema_cache_telemetry_to_event  
+      touchSchema(path)
+      return schema
+    end
+
+    @logger.debug? && @logger.debug("Event from unknown file/schema.  Reading schema from that file.", :path => path)
+
+    scrubSchemaCache(event) if @max_cached_schema_age_hours > 0
+
+    csvFileLine = readSchemaLineFromFile(path)
+    if !csvFileLine || csvFileLine.length == 0 
+      @logger.warn("No suitable schema row found in file.", :path => path)
+      return []
+    end
+
+    schema = CSV.parse_line(csvFileLine, :col_sep => @separator, :quote_char => @quote_char)
+    addSchemaToCache(path, schema)
+    @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => schema)
     
-    @logger.debug? && @logger.debug("handling csv in first_line_defines_schema mode", :path => path, :message => message)
+    if @add_schema_cache_telemetry_to_event 
+      event["_schemacachetelemetry"]="newEntryCreated"
+      event["_cache_touch_time"]=Time.now
+    end
+     
+    # Special handling for the schema row event: tag _csvmetadata and don't return individual column attributes
+    if @fileColumns[path].join == parsedValues.join
+      @logger.debug? && @logger.debug("Received the schema row event.  Tagging w/ _csvmetadata", :message => message)
+      event["_csvmetadata"] = true        
+      return []
+    else 
+      return schema
+    end
     
-    if message
-      begin
-        values = CSV.parse_line(message, :col_sep => @separator, :quote_char => @quote_char)
-        return if values.length == 0 
+  end
+  
+  def getCachedSchemaForFile(path)
+    @fileColumns[path]
+  end
+  
+  def addSchemaToCache(path, schema)
+    @fileColumns[path] = schema
+    touchSchema(path)
+  end
 
-        if @target.nil?
-          # Default is to write to the root of the event.
-          dest = event
-        else
-          dest = event[@target] ||= {}
-        end
-
-        # Get names for the columns.
-        cols = []
-        if @first_line_defines_columns
-          if !path
-            @logger.warn("No path in event.  Cannot use first_line_defines_columns mode on this event.")
-            cols = []   #Parse with default col names
-          else
-            @logger.debug? && @logger.debug("handling csv in first_line_defines_schema mode", :path => path, :message => message)
-            
-            if !@fileColumns.has_key?(path)   
-              @logger.debug? && @logger.debug("Event from unknown file/schema.  Reading schema from that file.", :path => path)
-
-              scrubSchemaCache(event) if @max_cached_schema_age_hours > 0
-
-              csvFileLine = ""
-              File.open(path, "r") do |f| 
-                while csvFileLine.length == 0 and csvFileLine = f.gets 
-                  if @schema_pattern_to_match
-                    if !csvFileLine.end_with?("\n") or !csvFileLine.match(@schema_pattern_to_match) 
-                      csvFileLine = ""
-                    end
-                  end
-                end
-              end
-              return if csvFileLine.length == 0
-              
-              @fileColumns[path] = CSV.parse_line(csvFileLine, :col_sep => @separator, :quote_char => @quote_char)
-              @schemaTouchedTimes[path] = Time.now
-              
-              @logger.debug? && @logger.debug("Schema read from file:", :path => path, :cols => @fileColumns[path])
-              if @add_schema_cache_telemetry_to_event 
-                event["_schemacachetelemetry"]="newEntryCreated"
-                event["_cache_touch_time"]=Time.now
-              end
-               
-              if @fileColumns[path].join == values.join
-                @logger.debug? && @logger.debug("Received the schema row event.  Tagging w/ _csvmetadata", :message => message)
-                cols = []
-                event["_csvmetadata"] = true        # Flag enables subsequent filtering of csv metadata line
-              else
-                cols = @fileColumns[path]
-              end
-              
-            else        
-              #We know this file's columns.  Use them.
-              @logger.debug? && @logger.debug("Known file. Using cached schema", :cols => @fileColumns[path])
-              event["_schemacachetelemetry"]="cachedEntryUsed" if @add_schema_cache_telemetry_to_event  
-              cols = @fileColumns[path]
-              @schemaTouchedTimes[path] = Time.now
-            end
+  def touchSchema(path)
+    @schemaTouchedTimes[path] = Time.now
+  end
+  
+  def readSchemaLineFromFile(path)
+    csvFileLine = ""
+    File.open(path, "r") do |f| 
+      while csvFileLine.length == 0 and csvFileLine = f.gets 
+        if @schema_pattern_to_match
+          if !csvFileLine.end_with?("\n") or !csvFileLine.match(@schema_pattern_to_match) 
+            csvFileLine = ""
           end
-        else
-          @logger.debug? && @logger.debug("handling csv in explicitly defined columns mode", :message => message, :columns => @columns)
-          cols = @columns 
-        end
-
-        if !event["_csvmetadata"]     # Don't add column attributes if this is the metadata event.
-          values.each_index do |i|
-          field_name = cols[i] || "column#{i+1}"
-          dest[field_name] = values[i]
         end
       end
-      rescue => e
-        event.tag "_csvparsefailure"
-        @logger.warn("Trouble parsing csv", :message => message, :exception => e)
-        return
-      end # begin
-    end # if message
-  end # decorate()
+    end
+    csvFileLine
+  end
   
   def scrubSchemaCache(event)
     @logger.debug? && @logger.debug("Scrubbing schema cache", :size => @fileColumns.length)
