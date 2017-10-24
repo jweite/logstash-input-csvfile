@@ -59,8 +59,8 @@ describe "inputs/csvfile" do
       events
     end #input block
 
-    insist { events[0]["message"] } == "hello"
-    insist { events[1]["message"] } == "world"
+    insist { events[0].get("message") } == "hello"
+    insist { events[1].get("message") } == "world"
   end #it
   
   it "should parse csv columns into event attributes using default column names" do
@@ -88,15 +88,15 @@ describe "inputs/csvfile" do
       3.times.collect { queue.pop }
     end
 
-    insist { events[0]["column1"] } == "first"
-    insist { events[0]["column2"] } == "second"
-    insist { events[0]["column3"] } == "third"
-    insist { events[1]["column1"] } == "fou,rth"  #Not a typo: quoting check
-    insist { events[1]["column2"] } == "fifth"
-    insist { events[2]["column1"] } == "sixth"
-    insist { events[2]["column2"] } == "seventh"
-    insist { events[2]["column3"] } == "eighth"
-    insist { events[2]["column4"] } == "ninth"
+    insist { events[0].get("column1") } == "first"
+    insist { events[0].get("column2") } == "second"
+    insist { events[0].get("column3") } == "third"
+    insist { events[1].get("column1") } == "fou,rth"  #Not a typo: quoting check
+    insist { events[1].get("column2") } == "fifth"
+    insist { events[2].get("column1") } == "sixth"
+    insist { events[2].get("column2") } == "seventh"
+    insist { events[2].get("column3") } == "eighth"
+    insist { events[2].get("column4") } == "ninth"
 
   end #it
 
@@ -127,15 +127,15 @@ describe "inputs/csvfile" do
       3.times.collect { queue.pop }
     end
 
-    insist { events[0]["FIRST_COL"] } == "first"
-    insist { events[0]["SECOND_COL"] } == "second"
-    insist { events[0]["THIRD_COL"] } == "third"
-    insist { events[1]["FIRST_COL"] } == "fourth"
-    insist { events[1]["SECOND_COL"] } == "fifth"
-    insist { events[2]["FIRST_COL"] } == "sixth"
-    insist { events[2]["SECOND_COL"] } == "sev,enth"
-    insist { events[2]["THIRD_COL"] } == "eighth"
-    insist { events[2]["column4"] } == "ninth"
+    insist { events[0].get("FIRST_COL") } == "first"
+    insist { events[0].get("SECOND_COL") } == "second"
+    insist { events[0].get("THIRD_COL") } == "third"
+    insist { events[1].get("FIRST_COL") } == "fourth"
+    insist { events[1].get("SECOND_COL") } == "fifth"
+    insist { events[2].get("FIRST_COL") } == "sixth"
+    insist { events[2].get("SECOND_COL") } == "sev,enth"
+    insist { events[2].get("THIRD_COL") } == "eighth"
+    insist { events[2].get("column4") } == "ninth"
 
   end #it
 
@@ -168,16 +168,16 @@ describe "inputs/csvfile" do
       4.times.collect { queue.pop }
     end
 
-    insist { events[0]["_csvmetadata"] } == true
-    insist { events[1]["A_COLUMN"] } == "first"
-    insist { events[1]["B_COLUMN"] } == "second"
-    insist { events[1]["C_COLUMN"] } == "third"
-    insist { events[2]["A_COLUMN"] } == "fourth"
-    insist { events[2]["B_COLUMN"] } == "fifth"
-    insist { events[3]["A_COLUMN"] } == "sixth"
-    insist { events[3]["B_COLUMN"] } == "seventh"
-    insist { events[3]["C_COLUMN"] } == "eighth"
-    insist { events[3]["column4"] } == "ninth"
+    insist { events[0].get("_csvmetadata") } == true
+    insist { events[1].get("A_COLUMN") } == "first"
+    insist { events[1].get("B_COLUMN") } == "second"
+    insist { events[1].get("C_COLUMN") } == "third"
+    insist { events[2].get("A_COLUMN") } == "fourth"
+    insist { events[2].get("B_COLUMN") } == "fifth"
+    insist { events[3].get("A_COLUMN") } == "sixth"
+    insist { events[3].get("B_COLUMN") } == "seventh"
+    insist { events[3].get("C_COLUMN") } == "eighth"
+    insist { events[3].get("column4") } == "ninth"
 
     File.open(tmpfile2_path, "a") do |fd|
       fd.puts("D_COLUMN,E_COLUMN,F_COLUMN")
@@ -190,16 +190,16 @@ describe "inputs/csvfile" do
       4.times.collect { queue.pop }
     end
 
-    insist { events[0]["_csvmetadata"] } == true
-    insist { events[1]["D_COLUMN"] } == "first"
-    insist { events[1]["E_COLUMN"] } == "second"
-    insist { events[1]["F_COLUMN"] } == "third"
-    insist { events[2]["D_COLUMN"] } == "fourth"
-    insist { events[2]["E_COLUMN"] } == "fifth"
-    insist { events[3]["D_COLUMN"] } == "sixth"
-    insist { events[3]["E_COLUMN"] } == "seventh"
-    insist { events[3]["F_COLUMN"] } == "eighth"
-    insist { events[3]["column4"] } == "ninth"
+    insist { events[0].get("_csvmetadata") } == true
+    insist { events[1].get("D_COLUMN") } == "first"
+    insist { events[1].get("E_COLUMN") } == "second"
+    insist { events[1].get("F_COLUMN") } == "third"
+    insist { events[2].get("D_COLUMN") } == "fourth"
+    insist { events[2].get("E_COLUMN") } == "fifth"
+    insist { events[3].get("D_COLUMN") } == "sixth"
+    insist { events[3].get("E_COLUMN") } == "seventh"
+    insist { events[3].get("F_COLUMN") } == "eighth"
+    insist { events[3].get("column4") } == "ninth"
 
   end #it
 
@@ -232,16 +232,16 @@ describe "inputs/csvfile" do
       5.times.collect { queue.pop }
     end
 
-    insist { events[1]["_csvmetadata"] } == true
-    insist { events[2]["A_COLUMN"] } == "first"
-    insist { events[2]["B_COLUMN"] } == "second"
-    insist { events[2]["C_COLUMN"] } == "third"
-    insist { events[3]["A_COLUMN"] } == "fourth"
-    insist { events[3]["B_COLUMN"] } == "fifth"
-    insist { events[4]["A_COLUMN"] } == "sixth"
-    insist { events[4]["B_COLUMN"] } == "seventh"
-    insist { events[4]["C_COLUMN"] } == "eighth"
-    insist { events[4]["column4"] } == "ninth"
+    insist { events[1].get("_csvmetadata") } == true
+    insist { events[2].get("A_COLUMN") } == "first"
+    insist { events[2].get("B_COLUMN") } == "second"
+    insist { events[2].get("C_COLUMN") } == "third"
+    insist { events[3].get("A_COLUMN") } == "fourth"
+    insist { events[3].get("B_COLUMN") } == "fifth"
+    insist { events[4].get("A_COLUMN") } == "sixth"
+    insist { events[4].get("B_COLUMN") } == "seventh"
+    insist { events[4].get("C_COLUMN") } == "eighth"
+    insist { events[4].get("column4") } == "ninth"
 
   end #it
 
@@ -272,15 +272,15 @@ describe "inputs/csvfile" do
       3.times.collect { queue.pop }
     end
 
-    insist { events[0]["FIRST_COL"] } == "first"
-    insist { events[0]["SECOND_COL"] } == "second"
-    insist { events[0]["THIRD_COL"] } == "third"
-    insist { events[1]["FIRST_COL"] } == "fourth"
-    insist { events[1]["SECOND_COL"] } == "fifth"
-    insist { events[2]["FIRST_COL"] } == "sixth"
-    insist { events[2]["SECOND_COL"] } == "sev,enth"
-    insist { events[2]["THIRD_COL"] } == "eighth"
-    insist { events[2]["column4"] } == "ninth"
+    insist { events[0].get("FIRST_COL") } == "first"
+    insist { events[0].get("SECOND_COL") } == "second"
+    insist { events[0].get("THIRD_COL") } == "third"
+    insist { events[1].get("FIRST_COL") } == "fourth"
+    insist { events[1].get("SECOND_COL") } == "fifth"
+    insist { events[2].get("FIRST_COL") } == "sixth"
+    insist { events[2].get("SECOND_COL") } == "sev,enth"
+    insist { events[2].get("THIRD_COL") } == "eighth"
+    insist { events[2].get("column4") } == "ninth"
 
   end #it
 
@@ -320,21 +320,21 @@ describe "inputs/csvfile" do
       4.times.collect { queue.pop }
     end
 
-    insist { events[0]["_csvmetadata"] } == true
-    insist { events[0]["_schemacachetelemetry"] } == "newEntryCreated"
+    insist { events[0].get("_csvmetadata") } == true
+    insist { events[0].get("_schemacachetelemetry") } == "newEntryCreated"
     
-    insist { events[1]["A_COLUMN"] } == "first"
-    insist { events[1]["B_COLUMN"] } == "second"
-    insist { events[1]["C_COLUMN"] } == "third"
-    insist { events[1]["_schemacachetelemetry"] } == "cachedEntryUsed"
+    insist { events[1].get("A_COLUMN") } == "first"
+    insist { events[1].get("B_COLUMN") } == "second"
+    insist { events[1].get("C_COLUMN") } == "third"
+    insist { events[1].get("_schemacachetelemetry") } == "cachedEntryUsed"
     
-    insist { events[2]["_csvmetadata"] } == true
-    insist { events[2]["_schemacachetelemetry"] } == "newEntryCreated"
+    insist { events[2].get("_csvmetadata") } == true
+    insist { events[2].get("_schemacachetelemetry") } == "newEntryCreated"
     
-    insist { events[3]["D_COLUMN"] } == "1st"
-    insist { events[3]["E_COLUMN"] } == "2nd"
-    insist { events[3]["F_COLUMN"] } == "3rd"
-    insist { events[3]["_schemacachetelemetry"] } == "cachedEntryUsed"
+    insist { events[3].get("D_COLUMN") } == "1st"
+    insist { events[3].get("E_COLUMN") } == "2nd"
+    insist { events[3].get("F_COLUMN") } == "3rd"
+    insist { events[3].get("_schemacachetelemetry") } == "cachedEntryUsed"
 
   end #it
 
@@ -366,13 +366,13 @@ describe "inputs/csvfile" do
       2.times.collect { queue.pop }
     end
 
-    insist { events[0]["_csvmetadata"] } == true
-    insist { events[0]["_schemacachetelemetry"] } == "newEntryCreated"
+    insist { events[0].get("_csvmetadata") } == true
+    insist { events[0].get("_schemacachetelemetry") } == "newEntryCreated"
     
-    insist { events[1]["A_COLUMN"] } == "first"
-    insist { events[1]["B_COLUMN"] } == "second"
-    insist { events[1]["C_COLUMN"] } == "third"
-    insist { events[1]["_schemacachetelemetry"] } == "cachedEntryUsed"
+    insist { events[1].get("A_COLUMN") } == "first"
+    insist { events[1].get("B_COLUMN") } == "second"
+    insist { events[1].get("C_COLUMN") } == "third"
+    insist { events[1].get("_schemacachetelemetry") } == "cachedEntryUsed"
     
     File.open(tmpfile_path, "a") do |fd|
       fd.puts("fourth,fifth,sixth")
@@ -382,10 +382,10 @@ describe "inputs/csvfile" do
       1.times.collect { queue.pop }
     end
 
-    insist { events[0]["A_COLUMN"] } == "fourth"
-    insist { events[0]["B_COLUMN"] } == "fifth"
-    insist { events[0]["C_COLUMN"] } == "sixth"
-    insist { events[0]["_schemacachetelemetry"] } == "newEntryCreated"
+    insist { events[0].get("A_COLUMN") } == "fourth"
+    insist { events[0].get("B_COLUMN") } == "fifth"
+    insist { events[0].get("C_COLUMN") } == "sixth"
+    insist { events[0].get("_schemacachetelemetry") } == "newEntryCreated"
 
   end #it
 
@@ -431,15 +431,16 @@ describe "inputs/csvfile" do
       end
       # Verify File1 schema was cached and schema row was tagged as csvmetadata
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
-      insist { event["_csvmetadata"] } == true
+	  
+      insist { event.get("_schemacachetelemetry") } == "newEntryCreated"
+      insist { event.get("_csvmetadata") } == true
 
       # Verify that cached File1 schema was used to decode row2 of File1
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
-      insist { event["A_COLUMN"] } == "first"
-      insist { event["B_COLUMN"] } == "second"
-      insist { event["C_COLUMN"] } == "third"
+      insist { event.get("_schemacachetelemetry") } == "cachedEntryUsed"
+      insist { event.get("A_COLUMN") } == "first"
+      insist { event.get("B_COLUMN") } == "second"
+      insist { event.get("C_COLUMN") } == "third"
 
       # File2 Initial Entries
       File.open(tmpfile2_path, "a") do |fd|
@@ -448,15 +449,15 @@ describe "inputs/csvfile" do
       end
       # Verify File2 schema was cached and schema row was tagged as csvmetadata
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
-      insist { event["_csvmetadata"] } == true
+      insist { event.get("_schemacachetelemetry") } == "newEntryCreated"
+      insist { event.get("_csvmetadata") } == true
       
       # Verify that cached File2 schema was used to decode row2 of File2
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
-      insist { event["D_COLUMN"] } == "1st"
-      insist { event["E_COLUMN"] } == "2nd"
-      insist { event["F_COLUMN"] } == "3rd"
+      insist { event.get("_schemacachetelemetry") } == "cachedEntryUsed"
+      insist { event.get("D_COLUMN") } == "1st"
+      insist { event.get("E_COLUMN") } == "2nd"
+      insist { event.get("F_COLUMN") } == "3rd"
 
       # Touch File1 before its cached schema entries expires (<10s), refreshing the entry.
       sleep 5
@@ -465,10 +466,10 @@ describe "inputs/csvfile" do
       end
       # Verify that still-cached File1 schema was used to decode newly added row of File1
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
-      insist { event["A_COLUMN"] } == "fourth"
-      insist { event["B_COLUMN"] } == "fifth"
-      insist { event["C_COLUMN"] } == "sixth"
+      insist { event.get("_schemacachetelemetry") } == "cachedEntryUsed"
+      insist { event.get("A_COLUMN") } == "fourth"
+      insist { event.get("B_COLUMN") } == "fifth"
+      insist { event.get("C_COLUMN") } == "sixth"
 
       # Touch File1 again after File2's cache entry expires.  
       sleep 10
@@ -477,10 +478,10 @@ describe "inputs/csvfile" do
       end
       # Verify that File1's entry hasn't expired, by virtue of the previous touch refreshing it.
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
-      insist { event["A_COLUMN"] } == "seventh"
-      insist { event["B_COLUMN"] } == "eighth"
-      insist { event["C_COLUMN"] } == "ninth"
+      insist { event.get("_schemacachetelemetry") } == "cachedEntryUsed"
+      insist { event.get("A_COLUMN") } == "seventh"
+      insist { event.get("B_COLUMN") } == "eighth"
+      insist { event.get("C_COLUMN") } == "ninth"
 
       # Touch File3. Creation of its cache entry forces purge of File2's expired entry, which is made visible via telemetry.
       sleep 1
@@ -491,17 +492,17 @@ describe "inputs/csvfile" do
       # Verify that scrubbing of expired cache entries takes place, reducing cached count from 2 (File1 & File2) to 1 (Just File1).
       #  (Scrubbing takes place before creation of File3's schema entry in the cache.)
       event = queue.pop
-      insist { event["_csvmetadata"] } == true
-      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
-      insist { event["_schemacachetelemetryscrubbedbeforecount"] } == 2
-      insist { event["_schemacachetelemetryscrubbedaftercount"] } == 1
+      insist { event.get("_csvmetadata") } == true
+      insist { event.get("_schemacachetelemetry") } == "newEntryCreated"
+      insist { event.get("_schemacachetelemetryscrubbedbeforecount") } == 2
+      insist { event.get("_schemacachetelemetryscrubbedaftercount") } == 1
 
       # Verify that File3's schema did in fact get cached.
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "cachedEntryUsed"
-      insist { event["X_COLUMN"] } == "erste"
-      insist { event["Y_COLUMN"] } == "zweite"
-      insist { event["Z_COLUMN"] } == "dritte"
+      insist { event.get("_schemacachetelemetry") } == "cachedEntryUsed"
+      insist { event.get("X_COLUMN") } == "erste"
+      insist { event.get("Y_COLUMN") } == "zweite"
+      insist { event.get("Z_COLUMN") } == "dritte"
       
       # File2 post-expiration entry.  Should re-create the File2 cache entry.
       sleep 1
@@ -510,10 +511,10 @@ describe "inputs/csvfile" do
       end
       # Verify that File2's schema gets recreated (but not transmitted as an event since this isn't the natural row0 read).
       event = queue.pop
-      insist { event["_schemacachetelemetry"] } == "newEntryCreated"
-      insist { event["D_COLUMN"] } == "4th"
-      insist { event["E_COLUMN"] } == "5th"
-      insist { event["F_COLUMN"] } == "6th"
+      insist { event.get("_schemacachetelemetry") } == "newEntryCreated"
+      insist { event.get("D_COLUMN") } == "4th"
+      insist { event.get("E_COLUMN") } == "5th"
+      insist { event.get("F_COLUMN") } == "6th"
 
     end #input block
   end #it
